@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Application xmlns:fx="http://ns.adobe.com/mxml/2009"
+  		   xmlns:s="library://ns.adobe.com/flex/spark"
+			   xmlns:mx="library://ns.adobe.com/flex/mx" 
+			   xmlns:maps="com.google.maps.*"
+			   xmlns:controls="com.google.maps.controls.*">
+	<fx:Style source="mapping.css"/>
+	<fx:Declarations>
+		<!-- Placer ici les éléments non visuels (services et objets de valeur, par exemple). -->
+	</fx:Declarations>
+		<s:Group>
+			<s:VGroup left="4" right="42" top="4" height="181" horizontalCenter="-19">
+				<s:HGroup>
+				</s:HGroup>								
+			</s:VGroup>
+		</s:Group>	
+	
+	<maps:Map id="map" left="230" right="0" top="1" bottom="0" horizontalCenter="115"
+			  key="AIzaSyACB6oa6oKDQlf7UGlxFNQKzZk9CFqgEgI" mapevent_mapready="onMapReady(event)"
+			  sensor="true" url="http://localhost" language="fr" verticalCenter="0"/>
+	<controls:NavigationControl x="0" y="162" width="600" height="47"/>
+	<s:Button id="getDirections" x="7" y="107" width="217" height="40" label="Calculer l'itinéraire"
+			  click="processDirections(event);" icon="assets/search(1).png" styleName="search"/>
+	<s:Button id="getTurnByTurnDirections" x="7" y="155" width="217" height="34"
+			  label="Aller a la prochaine étape" click="processTurnByTurn();" color="#000000"
+			  enabled="false" fontFamily="_sans"/>
+	<s:TextInput id="to" x="102" y="63" width="119" height="33"/>
+	<s:TextInput id="from" x="102" y="12" width="121" styleName="esai" />
+	<s:Label id="step" x="8" y="274" width="216" height="177" styleName="zonetexte"
+			 textAlign="center"/>
+	<s:Label x="10" y="12" width="104" height="33" fontStyle="normal" fontWeight="bold"
+			 text="Départ :" textAlign="center" textDecoration="none" verticalAlign="middle"/>
+	<s:Label x="10" y="63" width="102" height="36" fontWeight="bold" text="Arrivée :"
+			 textAlign="center" verticalAlign="middle"/>
+	<s:Label id="resume" x="10" y="197" width="212" height="69" textAlign="center"
+			 verticalAlign="middle"/>
+	
+	
+	<fx:Script>
+		<![CDATA[
+			import com.google.maps.*;
+			import com.google.maps.InfoWindowOptions;
+			import com.google.maps.LatLng;
+			import com.google.maps.Map;
+			import com.google.maps.MapEvent;
+			import com.google.maps.MapMouseEvent;
+			import com.google.maps.MapType;
+			import com.google.maps.controls.MapTypeControl;
+			import com.google.maps.controls.NavigationControl;
+			import com.google.maps.controls.OverviewMapControl;
+			import com.google.maps.controls.ScaleControl;
+			import com.google.maps.controls.ZoomControl;
+			import com.google.maps.interfaces.IDirections;
+			import com.google.maps.overlays.*;
+			import com.google.maps.overlays.Marker;
+			import com.google.maps.overlays.MarkerOptions;
+			import com.google.maps.services.*;
+			import com.google.maps.services.ClientGeocoder;
+			import com.google.maps.services.ClientGeocoderOptions;
+			import com.google.maps.services.DirectionsEvent;
+			import com.google.maps.services.GeocodingEvent;
+			import com.google.maps.styles.FillStyle;
+			import com.google.maps.styles.StrokeStyle;
+			
+			import flash.display.Sprite;
+			import flash.events.Event;
+			import flash.events.TransformGestureEvent;
+			import flash.sensors.Geolocation;
+			import flash.ui.Multitouch;
+			import flash.ui.MultitouchInputMode;
+			
+			import flashx.textLayout.formats.Direction;
+			
+			import mx.utils.object_proxy;
+			
+			import spark.components.Panel;
+			
+			
+			
+			private var dir:Directions;
+			private var turnCounter:uint = 0;
+			
+			private function onMapReady(event:Event):void {
+				map.setCenter(new LatLng(48.850258199721495, 2.373046875), 6, MapType.NORMAL_MAP_TYPE);
+				map.addControl(new MapTypeControl());
+				map.addControl(new OverviewMapControl());
+				map.enableScrollWheelZoom();
+				
+				var m:Marker = new Marker(new LatLng(47.59042, 1.33694));
+				map.addOverlay(m);
+				m.addEventListener(MapMouseEvent.CLICK, function(e:MapMouseEvent):void {
+					map.openInfoWindow(LatLng( new LatLng (47.59042, 1.33694)), new InfoWindowOptions({title: "IUT", content: "de Blois"}));
+				});
+				dir = new Directions();
+				dir.addEventListener(DirectionsEvent.DIRECTIONS_SUCCESS, onDirLoad);
+				dir.addEventListener(DirectionsEvent.DIRECTIONS_FAILURE, onDirFail);
+				
+				Multitouch.inputMode = MultitouchInputMode.GESTURE;
+				map.addEventListener( TransformGestureEvent.GESTURE_ZOOM, onZoom );    // zoom map in/out
+			
+			}
+			
+			private static const IDLE_THRESHOLD : int = 100;
+			private var lastUpdate : Number = 0;
+			private function onZoom( event : TransformGestureEvent ) : void
+			{
+				if( getTimer() - lastUpdate > IDLE_THRESHOLD )
+				{
+					if( event.scaleX > 1 && event.scaleY > 1 )
+						map.setZoom( map.getZoom() + 1 );
+					if( event.scaleX < 1 && event.scaleY < 1 )
+						map.setZoom( map.getZoom() - 1 );
+					
+					lastUpdate = getTimer();
+				}
+			}
+			
+			private function processDirections(event:Event):void {
+				
+				dir.load("from: " + from.text + " to: " + to.text);
+				getTurnByTurnDirections.enabled = true;
+				
+				// Reset turnCounter to zero for new directions
+				turnCounter = 0;
+				step.text = "Début a " + from.text;
+				
+				
+				}
+			
+			private function onDirFail(event:DirectionsEvent):void {
+			step.text = "Votre intinéraire ne peut être calculé";
+			}
+			
+			private function onDirLoad(event:DirectionsEvent):void {
+				
+				var dir:Directions = event.directions as Directions; 
+				var startMarker:Marker;
+				var endMarker:Marker;
+				var StepText:String;
+				
+				map.clearOverlays();
+				map.addOverlay(dir.createPolyline());
+				map.setZoom(map.getBoundsZoomLevel(dir.bounds));
+				map.setCenter(dir.bounds.getCenter());
+				
+				startMarker = new Marker(dir.getRoute(0).startGeocode.point, new MarkerOptions({fillStyle: {color:Color.GREEN}}));
+				endMarker = new Marker(dir.getRoute(0).endGeocode.point, new MarkerOptions({fillStyle: {color:Color.BLUE}}));
+				map.addOverlay(startMarker);
+				map.addOverlay(endMarker);
+				
+				resume.text = dir.summaryHtml;
+				resume.text = dir.summaryHtml.replace(/&nbsp;/g,"");
+		
+			}
+			
+			
+			private function processTurnByTurn():void  {
+				
+				var stepText:String;
+				var stepMarker:Marker;
+				turnCounter++;
+				
+				
+				if (turnCounter <= dir.getRoute(0).numSteps) {
+					stepText = dir.getRoute(0).getStep(turnCounter-1).descriptionHtml;
+					stepMarker = new Marker(dir.getRoute(0).getStep(turnCounter-1).latLng, new MarkerOptions({label: turnCounter.toString()}));
+					map.addOverlay(stepMarker);
+					step.text = "Etape " + turnCounter + ": " + stepText; 
+					
+					step.text = stepText.replace (/<.*?>/g,"");
+					map.setCenter(dir.getRoute(0).getStep(turnCounter-1).latLng, 16, MapType.NORMAL_MAP_TYPE);
+				      }
+				
+				else {
+					getTurnByTurnDirections.enabled = false;
+					step.text = "Arrive a " + to.text + " : " + dir.getRoute(0).summaryHtml;
+					step.text = stepText.replace(/<.*?>/g,"");
+				} 
+				
+			}
+		
+							
+			
+		]]>
+	</fx:Script>
+	
+	
+
+</s:Application>
